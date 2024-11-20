@@ -110,24 +110,78 @@ def validation_page():
     if st.button("Guardar Validación"):
         df["Validación"] = st.session_state.validations
 
-        # Get the original filename
-        original_filename = st.session_state.df_name
+        # Calculate percentages
+        total_validations = len(df)
+        correct_count = st.session_state.validations.count("Correcto")
+        incorrect_count = st.session_state.validations.count("Incorrecto")
 
-        # Determine the file extension and create the new filename
-        if original_filename.endswith(".csv"):
-            validated_file_name = original_filename.replace(
-                ".csv", "_validacion.csv")
-            df.to_csv(validated_file_name, index=False)
-        elif original_filename.endswith((".xlsx", ".xls")):
-            validated_file_name = original_filename.replace(
-                ".xlsx", "_validacion.xlsx").replace(".xls", "_validacion.xls")
-            df.to_excel(validated_file_name, index=False)
+        correct_percentage = (
+            correct_count / total_validations) * 100 if total_validations else 0
+        incorrect_percentage = (
+            incorrect_count / total_validations) * 100 if total_validations else 0
+
+        if st.session_state.df_name.endswith(".csv"):
+            # Save CSV as in-memory string
+            validated_file = df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="Descargar Validación como CSV",
+                data=validated_file,
+                file_name=st.session_state.df_name.replace(
+                    ".csv", "_validacion.csv"),
+                mime="text/csv"
+            )
+        elif st.session_state.df_name.endswith((".xlsx", ".xls")):
+            # Save Excel as in-memory bytes with formatting
+            import io
+            from openpyxl import Workbook
+            from openpyxl.styles import PatternFill
+
+            # Create Excel writer with openpyxl engine
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Validaciones')
+
+                # Access workbook and worksheet
+                workbook = writer.book
+                worksheet = writer.sheets['Validaciones']
+
+                # Apply color formatting
+                fill_green = PatternFill(
+                    start_color="00FF00", end_color="00FF00", fill_type="solid")
+                fill_red = PatternFill(
+                    start_color="FF0000", end_color="FF0000", fill_type="solid")
+
+                # Start at row 2 (skip header)
+                for row_idx, value in enumerate(df["Validación"], start=2):
+                    cell = worksheet.cell(
+                        row=row_idx, column=df.columns.get_loc("Validación") + 1)
+                    if value == "Correcto":
+                        cell.fill = fill_green
+                    elif value == "Incorrecto":
+                        cell.fill = fill_red
+
+                # Add percentage calculations at the end of the sheet
+                summary_row = len(df) + 3  # Leave one empty row after data
+                worksheet.cell(row=summary_row, column=1,
+                               value="Porcentaje Correctos:")
+                worksheet.cell(row=summary_row, column=2,
+                               value=f"{correct_percentage:.2f}%")
+                worksheet.cell(row=summary_row + 1, column=1,
+                               value="Porcentaje Incorrectos:")
+                worksheet.cell(row=summary_row + 1, column=2,
+                               value=f"{incorrect_percentage:.2f}%")
+
+            # Save workbook to in-memory bytes
+            validated_file = output.getvalue()
+            st.download_button(
+                label="Descargar Validación como Excel",
+                data=validated_file,
+                file_name=st.session_state.df_name.replace(
+                    ".xlsx", "_validacion.xlsx"),
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
         else:
             st.error("Formato de archivo no soportado para guardar.")
-            return
-
-        st.success(f"La validación fue guardada exitosamente en: {
-                   validated_file_name}.")
 
 
 if st.session_state.validation_started:
